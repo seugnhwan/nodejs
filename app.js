@@ -27,9 +27,9 @@ var postSchema = mongoose.Schema({
 var Post = mongoose.model('post',postSchema);
 
 app.get('/posts', function(req,res){
-	Post.find({}, function (err,posts){
+	Post.find({}).sort('-createdAt').exec(function (err,posts){
 		if(err) return res.json({success:false, message:err});
-		res.json({success:true, data:posts});
+		res.render("posts/index", {data:posts});
 	});
 });
 app.post('/posts', function(req,res){
@@ -41,7 +41,7 @@ app.post('/posts', function(req,res){
 app.get('/posts/:id', function(req,res){
 	Post.findById(req.params.id, function (err,post) {
 		if(err) return res.json({success:false, message:err});
-		res.json({success:true, data:post});
+		res.render("posts/show", {data:post});
 	});
 });
 app.put('/posts/:id', function(req,res){
