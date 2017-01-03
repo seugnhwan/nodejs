@@ -1,23 +1,23 @@
-var express = require('express');
-var path = require('path');
-var app = express();
+// import modules
+var express  = require('express');
+var app      = express();
+var path     = require('path');
 var mongoose = require('mongoose');
 var passport = require('passport');
-var session = require('express-session');
-var flash = require('connect-flash');
-var async = require('async');
-var bodyParser = require('body-parser');
+var session  = require('express-session');
+var flash    = require('connect-flash');
+var async    = require('async');
+var bodyParser     = require('body-parser');
 var methodOverride = require('method-override');
 
-
-//mongoose.connect(process.env.MONGO_DB);
+// connect database
 mongoose.connect("mongodb://admin:dltmdghks@ds151078.mlab.com:51078/wgame");
 var db = mongoose.connection;
 db.once("open",function () {
-	console.log("DB connected!");
+  console.log("DB connected!");
 });
-db.on("error",function (err){
-	console.log("DB ERROR : ",err);
+db.on("error",function (err) {
+  console.log("DB ERROR :", err);
 });
 
 // model setting
@@ -29,12 +29,27 @@ var postSchema = mongoose.Schema({
 });
 var Post = mongoose.model('post',postSchema);
 
+var bcrypt = require("bcrypt-nodejs");
 var userSchema = mongoose.Schema({
   email: {type:String, required:true, unique:true},
   nickname: {type:String, required:true, unique:true},
   password: {type:String, required:true},
   createdAt: {type:Date, default:Date.now}
 });
+userSchema.pre("save", function (next){
+  var user = this;
+  if(!user.isModified("password")){
+    return next();
+  } else {
+    user.password = bcrypt.hashSync(user.password);
+    return next();
+  }
+});
+userSchema.methods.authenticate = function (password) {
+  var user = this;
+  return bcrypt.compareSync(password,user.password);
+};
+
 var User = mongoose.model('user',userSchema);
 
 // view setting
@@ -75,7 +90,7 @@ passport.use('local-login',
             req.flash("email", req.body.email);
             return done(null, false, req.flash('loginError', 'No user found.'));
         }
-        if (user.password != password){
+        if (!user.authenticate(password)){
             req.flash("email", req.body.email);
             return done(null, false, req.flash('loginError', 'Password does not Match.'));
         }
@@ -87,7 +102,7 @@ passport.use('local-login',
 
 // set home routes
 app.get('/', function (req,res) {
-  res.redirect('/posts');
+  res.redirect('/login');
 });
 app.get('/login', function (req,res) {
   res.render('login/login',{email:req.flash("email")[0], loginError:req.flash('loginError')});
@@ -129,13 +144,14 @@ app.post('/users', checkUserRegValidation, function(req,res,next){
     res.redirect('/login');
   });
 }); // create
-app.get('/users/:id', function(req,res){
+app.get('/users/:id', isLoggedIn, function(req,res){
     User.findById(req.params.id, function (err,user) {
       if(err) return res.json({success:false, message:err});
       res.render("users/show", {user: user});
     });
 }); // show
-app.get('/users/:id/edit', function(req,res){
+app.get('/users/:id/edit', isLoggedIn, function(req,res){
+  if(req.user._id != req.params.id) return res.json({success:false, message:"Unauthrized Attempt"});
   User.findById(req.params.id, function (err,user) {
     if(err) return res.json({success:false, message:err});
     res.render("users/edit", {
@@ -148,12 +164,14 @@ app.get('/users/:id/edit', function(req,res){
     );
   });
 }); // edit
-app.put('/users/:id', checkUserRegValidation, function(req,res){
+app.put('/users/:id', isLoggedIn, checkUserRegValidation, function(req,res){
+  if(req.user._id != req.params.id) return res.json({success:false, message:"Unauthrized Attempt"});
   User.findById(req.params.id, req.body.user, function (err,user) {
     if(err) return res.json({success:"false", message:err});
-    if(req.body.user.password == user.password){
+    if(user.authenticate(req.body.user.password)){
       if(req.body.user.newPassword){
-        req.body.user.password=req.body.user.newPassword;
+        user.password = req.body.user.newPassword;
+        user.save();
       } else {
         delete req.body.user.password;
       }
@@ -213,6 +231,13 @@ app.delete('/posts/:id', function(req,res){
 }); //destroy
 
 //functions
+function isLoggedIn(req, res, next) {
+  if (req.isAuthenticated()){
+    return next();
+  }
+  res.redirect('/');
+}
+
 function checkUserRegValidation(req, res, next) {
   var isValid = true;
 
